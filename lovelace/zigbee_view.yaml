@@ -1,0 +1,117 @@
+################################################################################
+# Zigbee LQI Dashboard — Lovelace View
+#
+# Paste this into your Lovelace raw config editor as a new view.
+#
+# Requirements:
+#   - HACS: button-card (custom:button-card)
+#   - sensor.zigbee_lqi_data from packages/zigbee_status.yaml
+#   - scripts/zha_lqi.py in your HA config scripts folder
+################################################################################
+
+title: Zigbee
+path: zigbee
+icon: mdi:zigbee
+panel: true
+badges: []
+cards:
+  - type: custom:button-card
+    color_type: card
+    tap_action:
+      action: none
+    extra_styles: |
+      ha-card {
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0;
+        height: 100vh;
+        overflow-y: auto;
+      }
+    styles:
+      card:
+        - background: transparent
+        - box-shadow: none
+        - padding: "0"
+        - border: none
+      label:
+        - width: 100%
+        - white-space: normal
+        - text-align: left
+    show_label: true
+    show_name: false
+    show_icon: false
+    label: |
+      [[[
+        const now = new Date();
+        const attr = states["sensor.zigbee_lqi_data"]?.attributes || {};
+        const devices = attr.devices || [];
+
+        if (devices.length === 0) {
+          return "<div style='padding:32px;text-align:center;color:rgba(255,255,255,0.4);font-family:-apple-system,Helvetica,sans-serif;'>No ZHA data yet — sensor initialising...</div>";
+        }
+
+        const lqiColor = (v) => {
+          if (v == null || isNaN(v)) return "rgba(255,255,255,0.3)";
+          if (v >= 150) return "#32D74B";
+          if (v >= 100) return "#FFD60A";
+          if (v >= 60)  return "#FF9F0A";
+          return "#FF453A";
+        };
+        const ageColor = (m) => {
+          if (m == null) return "rgba(255,255,255,0.3)";
+          if (m <= 10)   return "rgba(255,255,255,0.85)";
+          if (m <= 30)   return "#FFD60A";
+          if (m <= 120)  return "#FF9F0A";
+          return "#FF453A";
+        };
+        const bar = (v) => {
+          if (v == null) return "<div style='width:80px;height:6px;background:rgba(255,255,255,0.12);border-radius:3px;display:inline-block;vertical-align:middle;'></div>";
+          const pct = Math.min(100, Math.round((v / 255) * 100));
+          return "<div style='width:80px;height:6px;background:rgba(255,255,255,0.12);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;'><div style='width:" + pct + "%;height:100%;background:" + lqiColor(v) + ";border-radius:3px;'></div></div>";
+        };
+
+        const rows = devices.map((d) => {
+          let ageMins = null;
+          if (d.last_seen) {
+            ageMins = Math.round((now - new Date(d.last_seen)) / 60000);
+          }
+          return { ...d, ageMins };
+        });
+
+        const headerStyle = "padding:10px 16px;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:rgba(255,255,255,0.4);border-bottom:1px solid rgba(255,255,255,0.08);display:grid;grid-template-columns:1fr 110px 120px 70px;gap:8px;align-items:center;";
+        const header = "<div style='" + headerStyle + "'><span>Device</span><span style='text-align:right;'>Last Seen</span><span style='text-align:center;'>Signal</span><span style='text-align:right;'>LQI</span></div>";
+
+        const tableRows = rows.map((r, i) => {
+          const ageStr = r.ageMins == null ? "—" :
+                         r.ageMins < 1   ? "just now" :
+                         r.ageMins < 60  ? r.ageMins + "m ago" :
+                         Math.floor(r.ageMins/60) + "h " + (r.ageMins%60) + "m ago";
+          const lqiStr = r.lqi == null ? "—" : r.lqi;
+          const rs = "padding:10px 16px;font-size:14px;border-bottom:1px solid rgba(255,255,255,0.05);background:" + (i%2===0 ? "rgba(255,255,255,0.02)" : "transparent") + ";display:grid;grid-template-columns:1fr 110px 120px 70px;align-items:center;gap:8px;";
+          return "<div style='" + rs + "'>" +
+            "<span style='color:rgba(255,255,255,0.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>" + r.name + "</span>" +
+            "<span style='text-align:right;color:" + ageColor(r.ageMins) + ";font-variant-numeric:tabular-nums;font-size:13px;'>" + ageStr + "</span>" +
+            "<span style='text-align:center;'>" + bar(r.lqi) + "</span>" +
+            "<span style='text-align:right;color:" + lqiColor(r.lqi) + ";font-weight:500;font-variant-numeric:tabular-nums;'>" + lqiStr + "</span>" +
+            "</div>";
+        }).join("");
+
+        const good  = rows.filter(r => r.lqi != null && r.lqi >= 150).length;
+        const fair  = rows.filter(r => r.lqi != null && r.lqi >= 60 && r.lqi < 150).length;
+        const weak  = rows.filter(r => r.lqi != null && r.lqi < 60).length;
+        const stale = rows.filter(r => r.ageMins != null && r.ageMins > 30).length;
+
+        const summary = "<div style='display:flex;gap:20px;padding:12px 16px;font-size:12px;color:rgba(255,255,255,0.5);border-bottom:1px solid rgba(255,255,255,0.08);flex-wrap:wrap;'>" +
+          "<span>" + rows.length + " devices</span>" +
+          "<span style='color:#32D74B;'>● " + good + " strong ≥150</span>" +
+          "<span style='color:#FFD60A;'>● " + fair + " fair ≥60</span>" +
+          (weak  > 0 ? "<span style='color:#FF453A;'>● " + weak  + " weak <60</span>" : "") +
+          (stale > 0 ? "<span style='color:#FF9F0A;'>⏱ " + stale + " stale >30m</span>" : "") +
+          "</div>";
+
+        return "<div style='width:100%;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,Helvetica,sans-serif;color:rgba(255,255,255,0.85);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:16px;overflow:hidden;'>" +
+          "<div style='padding:14px 16px;font-size:16px;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;gap:8px;'>" +
+          "<ha-icon icon='mdi:zigbee' style='width:20px;height:20px;color:rgba(255,255,255,0.6);'></ha-icon> Zigbee Network</div>" +
+          summary + header + tableRows + "</div>";
+      ]]]
