@@ -7,7 +7,6 @@ A clean, full-page Lovelace dashboard showing the signal quality (LQI) and last-
 ## Screenshot
 
 *Full-page table showing all Zigbee devices with colour-coded signal bars and last-seen timestamps*
-<img width="1204" height="629" alt="image" src="https://github.com/user-attachments/assets/9ba318f8-1b1e-4d79-920e-519464ff8bc8" />
 
 ---
 

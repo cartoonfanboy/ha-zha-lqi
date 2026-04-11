@@ -12,7 +12,6 @@
 title: Zigbee
 path: zigbee
 icon: mdi:zigbee
-panel: true
 badges: []
 cards:
   - type: custom:button-card
@@ -25,8 +24,6 @@ cards:
         box-shadow: none !important;
         border: none !important;
         padding: 0;
-        height: 100vh;
-        overflow-y: auto;
       }
     styles:
       card:

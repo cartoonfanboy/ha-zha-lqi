@@ -2,7 +2,6 @@ command_line:
   - sensor:
       name: zigbee_lqi_data
       unique_id: zigbee_lqi_data
-      # Adjust path to your HA config dir: /config (standard) or /homeassistant (add-on)
       command: "python3 /config/scripts/zha_lqi.py"
       scan_interval: 300
       json_attributes:
