@@ -1,12 +1,12 @@
 # Zigbee LQI Dashboard — Home Assistant
 
-A clean, full-page Lovelace dashboard showing the signal quality (LQI) and last-seen time for every device on your ZHA Zigbee network. No cloud, no add-on — reads directly from the ZHA SQLite database.
+A Lovelace dashboard showing the signal quality (LQI) and last-seen time for every device on your ZHA Zigbee network. No cloud, no add-on — reads from ZHA's SQLite database and HA's recorder.
 
 ---
 
 ## Screenshot
 
-*Full-page table showing all Zigbee devices with colour-coded signal bars and last-seen timestamps*
+*Table showing all Zigbee devices with colour-coded signal bars and last-seen timestamps*
 
 ---
 
@@ -36,12 +36,17 @@ Devices are sorted worst signal first so problem devices are immediately visible
 
 ## How It Works
 
-A Python script (`scripts/zha_lqi.py`) reads directly from two local files — no HTTP calls needed:
+A Python script (`scripts/zha_lqi.py`) reads from three local sources:
 
-- `zigbee.db` — ZHA's SQLite database (LQI from the `neighbors_v15` table, last_seen from `devices_v15`)
-- `.storage/core.device_registry` — maps IEEE addresses to friendly names
+1. **HA recorder DB** (`home-assistant_v2.db`) — real-time LQI from ZHA diagnostic sensors (primary source, accurate per-device link quality)
+2. **ZHA SQLite DB** (`zigbee.db`) — neighbour table LQI as fallback for devices without a diagnostic sensor, plus `last_seen` timestamps
+3. **Device/entity registry** — maps IEEE addresses to friendly names and links LQI sensor entities to devices
 
-A `command_line` sensor runs this script every 5 minutes and stores the result as a JSON attribute. The Lovelace view uses `custom:button-card` with a JavaScript template to render the table entirely in the browser.
+A `command_line` sensor runs this script every 5 minutes and stores the result as a JSON attribute. The Lovelace view uses `custom:button-card` with a JavaScript template to render the table in the browser.
+
+### Why two LQI sources?
+
+The neighbour table in `zigbee.db` shows how well *other* routers see a device — not how well the device itself connects. This can differ significantly from the actual link quality. ZHA's built-in LQI diagnostic sensors report the real link quality directly from the device, so these are used when available.
 
 ---
 
@@ -57,7 +62,18 @@ A `command_line` sensor runs this script every 5 minutes and stores the result a
 
 ## Setup
 
-### Step 1 — Copy the script
+### Step 1 — Enable ZHA LQI diagnostic sensors
+
+For the most accurate LQI readings, enable the LQI diagnostic sensor on each of your Zigbee devices:
+
+1. Go to **Settings > Devices & Services > ZHA**
+2. Click each device > **Sensors** tab > find the `LQI` sensor > enable it
+
+Or enable them all at once by editing `.storage/core.entity_registry` — set `disabled_by` to `null` for every entity whose `entity_id` matches `_lqi` or `_lqi_N`. Restart HA after.
+
+Devices without an enabled LQI sensor fall back to the neighbour table automatically.
+
+### Step 2 — Copy the script
 
 Copy `scripts/zha_lqi.py` into your HA config scripts folder:
 
@@ -65,9 +81,7 @@ Copy `scripts/zha_lqi.py` into your HA config scripts folder:
 /config/scripts/zha_lqi.py
 ```
 
-Make sure it's readable by HA.
-
-### Step 2 — Add the package sensor
+### Step 3 — Add the package sensor
 
 Copy `packages/zigbee_status.yaml` into your packages folder, then ensure packages are enabled in `configuration.yaml`:
 
@@ -76,13 +90,13 @@ homeassistant:
   packages: !include_dir_named packages
 ```
 
-If your HA config directory is not `/config` (e.g. you're using the Claude Code add-on where it's `/homeassistant`), update the `command` path in the package file accordingly.
+> **Note:** If your HA config directory is not `/config` (e.g. the Claude Code add-on uses `/homeassistant`), update the `DB`, `RECORDER_DB`, `DEVICE_REG`, and `ENTITY_REG` paths at the top of `zha_lqi.py`.
 
-### Step 3 — Restart Home Assistant
+### Step 4 — Restart Home Assistant
 
-This loads the `command_line` sensor. After restart, check **Developer Tools > States** for `sensor.zigbee_lqi_data` — it should show a timestamp as its state and have a `devices` attribute with your Zigbee devices.
+After restart, check **Developer Tools > States** for `sensor.zigbee_lqi_data` — it should show a timestamp as its state and have a `devices` attribute listing your Zigbee devices.
 
-### Step 4 — Add the Lovelace view
+### Step 5 — Add the Lovelace view
 
 1. Open your dashboard > three-dot menu > **Edit Dashboard** > **Raw configuration editor**
 2. Under `views:`, paste the contents of `lovelace/zigbee_view.yaml` as a new list item
@@ -93,12 +107,16 @@ This loads the `command_line` sensor. After restart, check **Developer Tools > S
 ## Troubleshooting
 
 **Sensor shows "No ZHA data yet"**
-- Check that `zigbee.db` exists at `/config/zigbee.db` (or adjust the `DB` path at the top of `zha_lqi.py`)
-- Run the script manually to see any errors: `python3 /config/scripts/zha_lqi.py`
+- Check that `zigbee.db` exists at `/config/zigbee.db`
+- Run the script manually to see errors: `python3 /config/scripts/zha_lqi.py`
 
 **All LQI values show "—"**
-- ZHA may not have built its neighbor table yet — this populates after devices have been active for a while
-- Routers (mains-powered devices) contribute to the neighbor table; battery devices often don't
+- No LQI diagnostic sensors are enabled and the neighbour table is empty
+- Enable LQI sensors per Step 1, or wait for ZHA to build its neighbour table (happens after devices have been active for a while)
+
+**LQI values look wrong / much lower than expected**
+- The device's LQI diagnostic sensor is not enabled — the script is falling back to the neighbour table, which shows a different (often lower) value
+- Enable the LQI sensor for that device in ZHA and restart HA
 
 **Device names show IEEE addresses instead of names**
 - The device hasn't been named in HA, or the device registry path is wrong in the script
